@@ -3,13 +3,14 @@ from datetime import datetime
 import pandas as pd
 from io import StringIO
 from models import db, BatteryBank, TestSession, ReadingCycle, Reading
+from utils import format_duration, get_test_progress
 
 main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def dashboard():
     tests = TestSession.query.all()
-    return render_template('dashboard.html', tests=tests)
+    return render_template('dashboard.html', tests=tests, get_test_progress=get_test_progress)
 
 @main_bp.route('/create_test', methods=['GET', 'POST'])
 def create_test():
