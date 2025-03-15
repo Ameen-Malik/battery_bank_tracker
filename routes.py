@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from datetime import datetime
 import pandas as pd
 from io import StringIO, BytesIO
-from weasyprint import HTML
+from weasyprint import HTML, CSS
 from models import db, BatteryBank, TestSession, ReadingCycle, Reading
 from utils import format_duration, get_test_progress
 
@@ -185,8 +185,21 @@ def export_pdf(test_id):
         export_mode=True
     )
 
-    # Convert HTML to PDF
-    pdf = HTML(string=html_content).write_pdf()
+    # Define CSS for PDF export
+    css = CSS(string='''
+        @page { size: A4; margin: 2cm }
+        body { font-family: Arial, sans-serif; }
+        .card { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
+        .card-header { background-color: #f8f9fa; padding: 10px; margin-bottom: 15px; }
+        .table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+        .table th, .table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        .table th { background-color: #f8f9fa; }
+        .badge { padding: 5px 10px; border-radius: 4px; }
+        .text-muted { color: #6c757d; }
+    ''')
+
+    # Convert HTML to PDF with custom CSS
+    pdf = HTML(string=html_content).write_pdf(stylesheets=[css])
 
     return send_file(
         BytesIO(pdf),
