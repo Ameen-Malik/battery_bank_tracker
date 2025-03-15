@@ -19,27 +19,30 @@
             <div class="card-body">
                 <h5 class="card-title">{{ test.bank.name }}</h5>
                 <h6 class="card-subtitle mb-2 text-muted">Test #{{ test.id }}</h6>
-                
+
                 <div class="progress mb-3">
                     <div class="progress-bar" role="progressbar" 
                          style="width: {{ get_test_progress(test)|round|int }}%">
                         {{ get_test_progress(test)|round|int }}%
                     </div>
                 </div>
-                
+
                 <p class="card-text">
                     <small class="text-muted">
-                        Status: {{ test.status.capitalize() }}<br>
+                        Status: 
+                        <span class="badge {% if test.status == 'completed' %}bg-success{% elif test.status == 'in_progress' %}bg-primary{% else %}bg-secondary{% endif %}">
+                            {{ test.formatted_status }}
+                        </span><br>
                         Cycle: {{ test.current_cycle }}/{{ test.total_cycles }}<br>
-                        Phase: {{ test.current_phase.capitalize() }}
+                        Phase: {{ test.current_phase.capitalize() if test.status != 'scheduled' else 'Not Started' }}
                     </small>
                 </p>
-                
+
                 <div class="btn-group w-100">
                     <a href="/test/{{ test.id }}" class="btn btn-outline-info">
                         <i class="bi bi-info-circle"></i> Details
                     </a>
-                    {% if test.status == 'active' %}
+                    {% if test.status != 'completed' %}
                     <a href="/test/{{ test.id }}/readings" class="btn btn-outline-primary">
                         <i class="bi bi-pencil-square"></i> Take Readings
                     </a>

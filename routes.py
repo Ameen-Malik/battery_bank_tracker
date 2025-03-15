@@ -22,7 +22,7 @@ def create_test():
         )
         db.session.add(bank)
         db.session.flush()
-        
+
         test = TestSession(
             bank_id=bank.id,
             total_cycles=int(request.form['total_cycles'])
@@ -30,13 +30,13 @@ def create_test():
         db.session.add(test)
         db.session.commit()
         return jsonify({'success': True, 'test_id': test.id})
-    
+
     return render_template('create_test.html')
 
 @main_bp.route('/test/<int:test_id>')
 def test_details(test_id):
     test = TestSession.query.get_or_404(test_id)
-    return render_template('test_details.html', test=test)
+    return render_template('test_details.html', test=test, format_duration=format_duration)
 
 @main_bp.route('/test/<int:test_id>/readings')
 def take_readings(test_id):
@@ -47,7 +47,8 @@ def take_readings(test_id):
 def submit_ocv(test_id):
     data = request.json
     test = TestSession.query.get_or_404(test_id)
-    
+
+    # Create new reading cycle
     cycle = ReadingCycle(
         test_id=test_id,
         cycle_number=test.current_cycle,
@@ -55,7 +56,8 @@ def submit_ocv(test_id):
     )
     db.session.add(cycle)
     db.session.flush()
-    
+
+    # Add OCV readings
     for cell_num, value in enumerate(data['readings'], 1):
         reading = Reading(
             cycle_id=cycle.id,
@@ -65,7 +67,11 @@ def submit_ocv(test_id):
             phase=test.current_phase
         )
         db.session.add(reading)
-    
+
+    # Update test status to in_progress if this is the first reading
+    if test.status == 'scheduled':
+        test.status = 'in_progress'
+
     db.session.commit()
     return jsonify({'success': True})
 
@@ -79,9 +85,9 @@ def submit_ccv(test_id):
         phase=test.current_phase,
         status='active'
     ).first()
-    
-    sequence = len(current_cycle.readings.filter_by(reading_type='CCV').all()) + 1
-    
+
+    sequence = len(current_cycle.get_readings_by_type('CCV')) // test.bank.num_cells + 1
+
     for cell_num, value in enumerate(data['readings'], 1):
         reading = Reading(
             cycle_id=current_cycle.id,
@@ -92,7 +98,7 @@ def submit_ccv(test_id):
             phase=test.current_phase
         )
         db.session.add(reading)
-    
+
     db.session.commit()
     return jsonify({'success': True})
 
@@ -105,51 +111,66 @@ def end_phase(test_id):
         phase=test.current_phase,
         status='active'
     ).first()
-    
+
     current_cycle.status = 'completed'
     current_cycle.end_time = datetime.utcnow()
-    
+
     if test.current_phase == 'charge':
         test.current_phase = 'discharge'
     else:
         test.current_phase = 'charge'
         test.current_cycle += 1
-        
+
     if test.current_cycle > test.total_cycles:
         test.status = 'completed'
-    
+
     db.session.commit()
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'test_completed': test.status == 'completed'})
 
 @main_bp.route('/api/tests/<int:test_id>/export')
 def export_csv(test_id):
     test = TestSession.query.get_or_404(test_id)
-    
-    # Create DataFrame for export
-    data = []
+
+    # Prepare data for each cycle
+    export_data = []
     for cycle in test.cycles:
-        cycle_data = {
-            'Cycle': cycle.cycle_number,
-            'Phase': cycle.phase.capitalize(),
-            'Start Time': cycle.start_time,
-            'End Time': cycle.end_time
-        }
-        
-        ocv_readings = {r.cell_number: r.value for r in cycle.readings if r.reading_type == 'OCV'}
-        ccv_readings = {}
-        for r in cycle.readings:
-            if r.reading_type == 'CCV':
-                key = f'CCV-{r.sequence_number}-Cell-{r.cell_number}'
-                ccv_readings[key] = r.value
-        
-        cycle_data.update({f'OCV-Cell-{i}': ocv_readings.get(i) for i in range(1, test.bank.num_cells + 1)})
-        cycle_data.update(ccv_readings)
-        data.append(cycle_data)
-    
-    df = pd.DataFrame(data)
+        # Get all unique CCV sequence numbers for this cycle
+        ccv_sequences = sorted(set(r.sequence_number for r in cycle.readings if r.reading_type == 'CCV' and r.sequence_number is not None))
+
+        # Create column headers
+        headers = ['Cell No.', 'OCV']
+        headers.extend([f'CCV-{seq} ({min(r.timestamp for r in cycle.readings if r.reading_type == "CCV" and r.sequence_number == seq).strftime("%I:%M %p")})' 
+                       for seq in ccv_sequences])
+
+        # Create rows for each cell
+        for cell_num in range(1, test.bank.num_cells + 1):
+            row = {
+                'Cycle': cycle.cycle_number,
+                'Phase': cycle.phase.capitalize(),
+                'Cell No.': cell_num,
+                'OCV': next((r.value for r in cycle.readings if r.reading_type == 'OCV' and r.cell_number == cell_num), None)
+            }
+
+            # Add CCV readings
+            for seq in ccv_sequences:
+                ccv_value = next((r.value for r in cycle.readings 
+                                if r.reading_type == 'CCV' 
+                                and r.cell_number == cell_num 
+                                and r.sequence_number == seq), None)
+                row[f'CCV-{seq}'] = ccv_value
+
+            export_data.append(row)
+
+    # Convert to DataFrame and format
+    df = pd.DataFrame(export_data)
+
+    # Sort by Cycle, Phase, and Cell No.
+    df = df.sort_values(['Cycle', 'Phase', 'Cell No.'])
+
+    # Export to CSV
     csv_buffer = StringIO()
     df.to_csv(csv_buffer, index=False)
-    
+
     return send_file(
         StringIO(csv_buffer.getvalue()),
         mimetype='text/csv',

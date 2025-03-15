@@ -10,7 +10,7 @@
             <div class="col-md-6">
                 <h5>Test Information</h5>
                 <p>
-                    Status: {{ test.status.capitalize() }}<br>
+                    Status: {{ test.formatted_status }}<br>
                     Current Cycle: {{ test.current_cycle }}/{{ test.total_cycles }}<br>
                     Current Phase: {{ test.current_phase.capitalize() }}<br>
                     Start Time: {{ test.start_time.strftime('%Y-%m-%d %H:%M:%S') }}
@@ -27,35 +27,56 @@
         </div>
 
         <h4>Reading Cycles</h4>
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Cycle</th>
-                        <th>Phase</th>
-                        <th>Start Time</th>
-                        <th>End Time</th>
-                        <th>Duration</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for cycle in test.cycles %}
-                    <tr>
-                        <td>{{ cycle.cycle_number }}</td>
-                        <td>{{ cycle.phase.capitalize() }}</td>
-                        <td>{{ cycle.start_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                        <td>{{ cycle.end_time.strftime('%Y-%m-%d %H:%M:%S') if cycle.end_time else 'In Progress' }}</td>
-                        <td>{{ format_duration(cycle.start_time, cycle.end_time) }}</td>
-                        <td>{{ cycle.status.capitalize() }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        {% for cycle in test.cycles %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    Cycle {{ cycle.cycle_number }} - {{ cycle.phase.capitalize() }}
+                    <span class="badge {% if cycle.status == 'completed' %}bg-success{% else %}bg-primary{% endif %} float-end">
+                        {{ cycle.status.capitalize() }}
+                    </span>
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Cell No.</th>
+                                <th>OCV</th>
+                                {% for ccv in cycle.get_readings_by_type('CCV')|groupby('sequence_number')|first %}
+                                <th>CCV-{{ ccv.sequence_number }} ({{ ccv.timestamp.strftime('%I:%M %p') }})</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for cell in range(1, test.bank.num_cells + 1) %}
+                            <tr>
+                                <td>{{ cell }}</td>
+                                {% set ocv = cycle.readings|selectattr('reading_type', 'eq', 'OCV')|selectattr('cell_number', 'eq', cell)|first %}
+                                <td>{{ "%.2f"|format(ocv.value) if ocv else '-' }}</td>
+                                {% for ccv in cycle.get_readings_by_type('CCV')|selectattr('cell_number', 'eq', cell)|sort(attribute='sequence_number') %}
+                                <td>{{ "%.2f"|format(ccv.value) }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {% if cycle.end_time %}
+                <div class="mt-3">
+                    <small class="text-muted">
+                        Duration: {{ format_duration(cycle.start_time, cycle.end_time) }}
+                    </small>
+                </div>
+                {% endif %}
+            </div>
         </div>
+        {% endfor %}
 
         <div class="text-end mt-4">
-            {% if test.status == 'active' %}
+            {% if test.status == 'in_progress' %}
             <a href="/test/{{ test.id }}/readings" class="btn btn-primary">
                 <i class="bi bi-pencil-square"></i> Continue Readings
             </a>
