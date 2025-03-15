@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h2 class="mb-0">Take Readings - {{ test.bank.name }}</h2>
+        <span class="badge bg-primary">Cycle {{ test.current_cycle }}/{{ test.total_cycles }}</span>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info" id="phaseInfo">
+            <h4 class="alert-heading">Current Phase: <span id="currentPhase">{{ test.current_phase.capitalize() }}</span></h4>
+            <p class="mb-0">Taking <span id="readingType">OCV</span> readings for {{ test.bank.num_cells }} cells</p>
+        </div>
+
+        <form id="readingsForm" class="mb-4">
+            <div id="timeIntervalSection" class="mb-3" style="display: none;">
+                <label for="ccvInterval" class="form-label">Time Interval for CCV Readings (seconds)</label>
+                <input type="number" class="form-control" id="ccvInterval" min="1" required>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Cell Number</th>
+                            <th>Reading Value (V)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="readingsTableBody">
+                        {% for i in range(test.bank.num_cells) %}
+                        <tr>
+                            <td>Cell {{ i + 1 }}</td>
+                            <td>
+                                <input type="number" 
+                                       class="form-control reading-input" 
+                                       name="reading{{ i + 1 }}"
+                                       step="0.01" 
+                                       required>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="d-flex justify-content-between mt-4">
+                <button type="submit" class="btn btn-primary" id="submitReadings">
+                    <i class="bi bi-save"></i> Submit Readings
+                </button>
+                <button type="button" class="btn btn-danger" id="endPhase" style="display: none;">
+                    <i class="bi bi-stop-circle"></i> End CCV Readings
+                </button>
+            </div>
+        </form>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Current Readings Log</h5>
+            </div>
+            <div class="card-body">
+                <div id="readingsLog" class="small" style="max-height: 200px; overflow-y: auto;">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="intervalModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Next Reading Reminder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>It's time to take the next CCV reading!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Take Reading</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const testId = {{ test.id }};
+    const numCells = {{ test.bank.num_cells }};
+    const currentPhase = "{{ test.current_phase }}";
+</script>
+<script src="/static/js/readings.js"></script>
+{% endblock %}

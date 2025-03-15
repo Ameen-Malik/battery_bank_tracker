@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1>Test Dashboard</h1>
+    </div>
+    <div class="col text-end">
+        <a href="/create_test" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> New Test
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for test in tests %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">{{ test.bank.name }}</h5>
+                <h6 class="card-subtitle mb-2 text-muted">Test #{{ test.id }}</h6>
+                
+                <div class="progress mb-3">
+                    <div class="progress-bar" role="progressbar" 
+                         style="width: {{ get_test_progress(test)|round|int }}%">
+                        {{ get_test_progress(test)|round|int }}%
+                    </div>
+                </div>
+                
+                <p class="card-text">
+                    <small class="text-muted">
+                        Status: {{ test.status.capitalize() }}<br>
+                        Cycle: {{ test.current_cycle }}/{{ test.total_cycles }}<br>
+                        Phase: {{ test.current_phase.capitalize() }}
+                    </small>
+                </p>
+                
+                <div class="btn-group w-100">
+                    <a href="/test/{{ test.id }}" class="btn btn-outline-info">
+                        <i class="bi bi-info-circle"></i> Details
+                    </a>
+                    {% if test.status == 'active' %}
+                    <a href="/test/{{ test.id }}/readings" class="btn btn-outline-primary">
+                        <i class="bi bi-pencil-square"></i> Take Readings
+                    </a>
+                    {% endif %}
+                    <a href="/api/tests/{{ test.id }}/export" class="btn btn-outline-success">
+                        <i class="bi bi-download"></i> Export CSV
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

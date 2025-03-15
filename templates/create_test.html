@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title mb-0">Create New Test</h2>
+            </div>
+            <div class="card-body">
+                <form id="createTestForm">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Battery Bank Name</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="num_cells" class="form-label">Number of Cells</label>
+                        <input type="number" class="form-control" id="num_cells" name="num_cells" min="1" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="total_cycles" class="form-label">Total Cycles</label>
+                        <input type="number" class="form-control" id="total_cycles" name="total_cycles" min="1" required>
+                    </div>
+
+                    <div class="text-end">
+                        <button type="submit" class="btn btn-primary">Create Test</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('createTestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/create_test', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            window.location.href = `/test/${data.test_id}/readings`;
+        }
+    } catch (error) {
+        console.error('Error creating test:', error);
+        alert('Failed to create test. Please try again.');
+    }
+});
+</script>
+{% endblock %}
