@@ -9,6 +9,12 @@ class BatteryBank(db.Model):
     description = db.Column(db.Text)
     num_cells = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    job_number = db.Column(db.String(50), nullable=False)
+    customer_name = db.Column(db.String(100), nullable=False)
+    cell_type = db.Column(db.String(10), nullable=False)  # KPL/KPM/KPH
+    cell_rate = db.Column(db.Float, nullable=False)
+    percentage_capacity = db.Column(db.Float, nullable=False)
+    discharge_current = db.Column(db.Float, nullable=False)
     tests = db.relationship('TestSession', backref='bank', lazy=True)
 
 class TestSession(db.Model):

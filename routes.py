@@ -19,7 +19,13 @@ def create_test():
         bank = BatteryBank(
             name=request.form['name'],
             description=request.form['description'],
-            num_cells=int(request.form['num_cells'])
+            num_cells=int(request.form['num_cells']),
+            job_number=request.form['job_number'],
+            customer_name=request.form['customer_name'],
+            cell_type=request.form['cell_type'],
+            cell_rate=float(request.form['cell_rate']),
+            percentage_capacity=float(request.form['percentage_capacity']),
+            discharge_current=float(request.form['cell_rate']) * float(request.form['percentage_capacity']) / 100
         )
         db.session.add(bank)
         db.session.flush()
@@ -46,84 +52,125 @@ def take_readings(test_id):
 
 @main_bp.route('/api/tests/<int:test_id>/ocv', methods=['POST'])
 def submit_ocv(test_id):
-    data = request.json
-    test = TestSession.query.get_or_404(test_id)
+    try:
+        data = request.get_json()
+        test = TestSession.query.get_or_404(test_id)
 
-    cycle = ReadingCycle(
-        test_id=test_id,
-        cycle_number=test.current_cycle,
-        phase=test.current_phase
-    )
-    db.session.add(cycle)
-    db.session.flush()
-
-    for cell_num, value in enumerate(data['readings'], 1):
-        reading = Reading(
-            cycle_id=cycle.id,
-            reading_type='OCV',
-            cell_number=cell_num,
-            value=float(value),
+        cycle = ReadingCycle(
+            test_id=test_id,
+            cycle_number=test.current_cycle,
             phase=test.current_phase
         )
-        db.session.add(reading)
+        db.session.add(cycle)
+        db.session.flush()
 
-    if test.status == 'scheduled':
-        test.status = 'in_progress'
+        for cell_num, value in enumerate(data['readings'], 1):
+            reading = Reading(
+                cycle_id=cycle.id,
+                reading_type='OCV',
+                cell_number=cell_num,
+                value=float(value),
+                phase=test.current_phase
+            )
+            db.session.add(reading)
 
-    db.session.commit()
-    return jsonify({'success': True})
+        if test.status == 'scheduled':
+            test.status = 'in_progress'
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in submit_ocv: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/api/tests/<int:test_id>/ccv', methods=['POST'])
 def submit_ccv(test_id):
-    data = request.json
-    test = TestSession.query.get_or_404(test_id)
-    current_cycle = ReadingCycle.query.filter_by(
-        test_id=test_id,
-        cycle_number=test.current_cycle,
-        phase=test.current_phase,
-        status='active'
-    ).first()
+    try:
+        data = request.get_json()
+        test = TestSession.query.get_or_404(test_id)
+        current_cycle = ReadingCycle.query.filter_by(
+            test_id=test_id,
+            cycle_number=test.current_cycle,
+            phase=test.current_phase,
+            status='active'
+        ).first()
 
-    sequence = len(current_cycle.get_readings_by_type('CCV')) // test.bank.num_cells + 1
+        sequence = len(current_cycle.get_readings_by_type('CCV')) // test.bank.num_cells + 1
 
-    for cell_num, value in enumerate(data['readings'], 1):
-        reading = Reading(
-            cycle_id=current_cycle.id,
-            reading_type='CCV',
-            cell_number=cell_num,
-            value=float(value),
-            sequence_number=sequence,
-            phase=test.current_phase
-        )
-        db.session.add(reading)
+        for cell_num, value in enumerate(data['readings'], 1):
+            reading = Reading(
+                cycle_id=current_cycle.id,
+                reading_type='CCV',
+                cell_number=cell_num,
+                value=float(value),
+                sequence_number=sequence,
+                phase=test.current_phase
+            )
+            db.session.add(reading)
 
-    db.session.commit()
-    return jsonify({'success': True})
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in submit_ccv: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/tests/<int:test_id>/delete', methods=['POST'])
+def delete_test(test_id):
+    try:
+        test = TestSession.query.get_or_404(test_id)
+        bank = test.bank
+
+        # Delete all readings first
+        for cycle in test.cycles:
+            Reading.query.filter_by(cycle_id=cycle.id).delete()
+
+        # Delete all cycles
+        ReadingCycle.query.filter_by(test_id=test_id).delete()
+
+        # Delete the test
+        db.session.delete(test)
+
+        # Delete the bank
+        db.session.delete(bank)
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in delete_test: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/api/tests/<int:test_id>/end-phase', methods=['POST'])
 def end_phase(test_id):
-    test = TestSession.query.get_or_404(test_id)
-    current_cycle = ReadingCycle.query.filter_by(
-        test_id=test_id,
-        cycle_number=test.current_cycle,
-        phase=test.current_phase,
-        status='active'
-    ).first()
+    try:
+        test = TestSession.query.get_or_404(test_id)
+        current_cycle = ReadingCycle.query.filter_by(
+            test_id=test_id,
+            cycle_number=test.current_cycle,
+            phase=test.current_phase,
+            status='active'
+        ).first()
 
-    current_cycle.status = 'completed'
-    current_cycle.end_time = datetime.utcnow()
+        current_cycle.status = 'completed'
+        current_cycle.end_time = datetime.utcnow()
 
-    if test.current_phase == 'charge':
-        test.current_phase = 'discharge'
-    else:
-        test.current_phase = 'charge'
-        test.current_cycle += 1
+        if test.current_phase == 'charge':
+            test.current_phase = 'discharge'
+        else:
+            test.current_phase = 'charge'
+            test.current_cycle += 1
 
-    if test.current_cycle > test.total_cycles:
-        test.status = 'completed'
+        if test.current_cycle > test.total_cycles:
+            test.status = 'completed'
 
-    db.session.commit()
-    return jsonify({'success': True, 'test_completed': test.status == 'completed'})
+        db.session.commit()
+        return jsonify({'success': True, 'test_completed': test.status == 'completed'})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error in end_phase: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/api/tests/<int:test_id>/export')
 def export_csv(test_id):
