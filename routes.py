@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, jsonify, send_file
 from datetime import datetime
 import pandas as pd
 from io import StringIO
+from io import BytesIO # Added for binary mode handling
 from models import db, BatteryBank, TestSession, ReadingCycle, Reading
 from utils import format_duration, get_test_progress
 
@@ -135,12 +136,11 @@ def export_csv(test_id):
     export_data = []
     for cycle in test.cycles:
         # Get all unique CCV sequence numbers for this cycle
-        ccv_sequences = sorted(set(r.sequence_number for r in cycle.readings if r.reading_type == 'CCV' and r.sequence_number is not None))
-
-        # Create column headers
-        headers = ['Cell No.', 'OCV']
-        headers.extend([f'CCV-{seq} ({min(r.timestamp for r in cycle.readings if r.reading_type == "CCV" and r.sequence_number == seq).strftime("%I:%M %p")})' 
-                       for seq in ccv_sequences])
+        ccv_readings = sorted(
+            (r for r in cycle.readings if r.reading_type == 'CCV'),
+            key=lambda x: x.sequence_number
+        )
+        ccv_sequences = sorted(set(r.sequence_number for r in ccv_readings))
 
         # Create rows for each cell
         for cell_num in range(1, test.bank.num_cells + 1):
@@ -148,31 +148,32 @@ def export_csv(test_id):
                 'Cycle': cycle.cycle_number,
                 'Phase': cycle.phase.capitalize(),
                 'Cell No.': cell_num,
-                'OCV': next((r.value for r in cycle.readings if r.reading_type == 'OCV' and r.cell_number == cell_num), None)
+                'OCV': next((r.value for r in cycle.readings 
+                           if r.reading_type == 'OCV' and r.cell_number == cell_num), None)
             }
 
-            # Add CCV readings
+            # Add CCV readings with timestamps
             for seq in ccv_sequences:
-                ccv_value = next((r.value for r in cycle.readings 
-                                if r.reading_type == 'CCV' 
-                                and r.cell_number == cell_num 
-                                and r.sequence_number == seq), None)
-                row[f'CCV-{seq}'] = ccv_value
+                ccv = next((r for r in ccv_readings 
+                          if r.sequence_number == seq and r.cell_number == cell_num), None)
+                if ccv:
+                    row[f'CCV-{seq} ({ccv.timestamp.strftime("%I:%M %p")})'] = ccv.value
+                else:
+                    row[f'CCV-{seq}'] = None
 
             export_data.append(row)
 
     # Convert to DataFrame and format
     df = pd.DataFrame(export_data)
-
-    # Sort by Cycle, Phase, and Cell No.
     df = df.sort_values(['Cycle', 'Phase', 'Cell No.'])
 
-    # Export to CSV
-    csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False)
+    # Export to CSV in binary mode
+    output = StringIO()
+    df.to_csv(output, index=False)
+    output.seek(0)
 
     return send_file(
-        StringIO(csv_buffer.getvalue()),
+        BytesIO(output.getvalue().encode()),
         mimetype='text/csv',
         as_attachment=True,
         download_name=f'test_{test_id}_export.csv'

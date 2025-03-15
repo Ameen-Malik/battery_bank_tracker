@@ -44,7 +44,8 @@
                             <tr>
                                 <th>Cell No.</th>
                                 <th>OCV</th>
-                                {% for ccv in cycle.get_readings_by_type('CCV')|groupby('sequence_number')|first %}
+                                {% set ccv_readings = cycle.get_readings_by_type('CCV')|sort(attribute='sequence_number')|unique(attribute='sequence_number') %}
+                                {% for ccv in ccv_readings %}
                                 <th>CCV-{{ ccv.sequence_number }} ({{ ccv.timestamp.strftime('%I:%M %p') }})</th>
                                 {% endfor %}
                             </tr>
