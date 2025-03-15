@@ -1,8 +1,8 @@
 from flask import Blueprint, render_template, request, jsonify, send_file
 from datetime import datetime
 import pandas as pd
-from io import StringIO
-from io import BytesIO # Added for binary mode handling
+from io import StringIO, BytesIO
+from weasyprint import HTML
 from models import db, BatteryBank, TestSession, ReadingCycle, Reading
 from utils import format_duration, get_test_progress
 
@@ -49,7 +49,6 @@ def submit_ocv(test_id):
     data = request.json
     test = TestSession.query.get_or_404(test_id)
 
-    # Create new reading cycle
     cycle = ReadingCycle(
         test_id=test_id,
         cycle_number=test.current_cycle,
@@ -58,7 +57,6 @@ def submit_ocv(test_id):
     db.session.add(cycle)
     db.session.flush()
 
-    # Add OCV readings
     for cell_num, value in enumerate(data['readings'], 1):
         reading = Reading(
             cycle_id=cycle.id,
@@ -69,7 +67,6 @@ def submit_ocv(test_id):
         )
         db.session.add(reading)
 
-    # Update test status to in_progress if this is the first reading
     if test.status == 'scheduled':
         test.status = 'in_progress'
 
@@ -131,43 +128,40 @@ def end_phase(test_id):
 @main_bp.route('/api/tests/<int:test_id>/export')
 def export_csv(test_id):
     test = TestSession.query.get_or_404(test_id)
-
-    # Prepare data for each cycle
     export_data = []
+
     for cycle in test.cycles:
-        # Get all unique CCV sequence numbers for this cycle
-        ccv_readings = sorted(
-            (r for r in cycle.readings if r.reading_type == 'CCV'),
-            key=lambda x: x.sequence_number
-        )
+        # Get all CCV readings for this cycle
+        ccv_readings = cycle.get_readings_by_type('CCV')
         ccv_sequences = sorted(set(r.sequence_number for r in ccv_readings))
 
-        # Create rows for each cell
+        # Prepare data for each cell
         for cell_num in range(1, test.bank.num_cells + 1):
             row = {
                 'Cycle': cycle.cycle_number,
                 'Phase': cycle.phase.capitalize(),
-                'Cell No.': cell_num,
-                'OCV': next((r.value for r in cycle.readings 
-                           if r.reading_type == 'OCV' and r.cell_number == cell_num), None)
+                'Cell No.': cell_num
             }
+
+            # Add OCV reading
+            ocv = next((r for r in cycle.readings 
+                       if r.reading_type == 'OCV' and r.cell_number == cell_num), None)
+            row['OCV'] = f"{ocv.value:.2f}" if ocv else '-'
 
             # Add CCV readings with timestamps
             for seq in ccv_sequences:
                 ccv = next((r for r in ccv_readings 
                           if r.sequence_number == seq and r.cell_number == cell_num), None)
-                if ccv:
-                    row[f'CCV-{seq} ({ccv.timestamp.strftime("%I:%M %p")})'] = ccv.value
-                else:
-                    row[f'CCV-{seq}'] = None
+                header = f"CCV-{seq} ({ccv.timestamp.strftime('%I:%M %p') if ccv else ''})"
+                row[header] = f"{ccv.value:.2f}" if ccv else '-'
 
             export_data.append(row)
 
-    # Convert to DataFrame and format
+    # Create DataFrame and sort
     df = pd.DataFrame(export_data)
     df = df.sort_values(['Cycle', 'Phase', 'Cell No.'])
 
-    # Export to CSV in binary mode
+    # Export to CSV
     output = StringIO()
     df.to_csv(output, index=False)
     output.seek(0)
@@ -177,4 +171,26 @@ def export_csv(test_id):
         mimetype='text/csv',
         as_attachment=True,
         download_name=f'test_{test_id}_export.csv'
+    )
+
+@main_bp.route('/api/tests/<int:test_id>/export/pdf')
+def export_pdf(test_id):
+    test = TestSession.query.get_or_404(test_id)
+
+    # Generate HTML content using the same template as test details
+    html_content = render_template(
+        'test_details.html', 
+        test=test,
+        format_duration=format_duration,
+        export_mode=True
+    )
+
+    # Convert HTML to PDF
+    pdf = HTML(string=html_content).write_pdf()
+
+    return send_file(
+        BytesIO(pdf),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'test_{test_id}_report.pdf'
     )

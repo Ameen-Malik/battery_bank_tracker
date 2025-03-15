@@ -76,6 +76,7 @@
         </div>
         {% endfor %}
 
+        {% if not export_mode %}
         <div class="text-end mt-4">
             {% if test.status == 'in_progress' %}
             <a href="/test/{{ test.id }}/readings" class="btn btn-primary">
@@ -85,7 +86,11 @@
             <a href="/api/tests/{{ test.id }}/export" class="btn btn-success">
                 <i class="bi bi-download"></i> Export CSV
             </a>
+            <a href="/api/tests/{{ test.id }}/export/pdf" class="btn btn-info">
+                <i class="bi bi-file-pdf"></i> Export PDF
+            </a>
         </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
